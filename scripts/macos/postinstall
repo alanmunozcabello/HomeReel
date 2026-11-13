@@ -1,0 +1,34 @@
+#!/bin/sh
+set -eu
+
+log() { echo "HomeReel: $*"; }
+
+if command -v ffprobe >/dev/null 2>&1; then
+  log "FFmpeg ya esta disponible."
+  exit 0
+fi
+
+brew=""
+for candidate in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+  if [ -x "$candidate" ]; then brew="$candidate"; break; fi
+done
+
+if [ -z "$brew" ]; then
+  log "FFmpeg no esta instalado. Instala Homebrew desde https://brew.sh y luego ejecuta: brew install ffmpeg"
+  exit 0
+fi
+
+console_user="$(stat -f '%Su' /dev/console 2>/dev/null || true)"
+if [ -z "$console_user" ] || [ "$console_user" = "root" ] || [ "$console_user" = "loginwindow" ]; then
+  log "Abre Terminal como usuario normal y ejecuta: brew install ffmpeg"
+  exit 0
+fi
+
+log "Instalando FFmpeg mediante Homebrew..."
+if su - "$console_user" -c "'$brew' install ffmpeg"; then
+  log "FFmpeg instalado correctamente."
+else
+  log "No se pudo instalar FFmpeg automaticamente. Ejecuta: brew install ffmpeg"
+
+fi
+exit 0

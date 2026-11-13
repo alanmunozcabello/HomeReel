@@ -1,0 +1,27 @@
+name: macOS package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version for the package
+        required: true
+        default: 0.1.0
+  release:
+    types: [created]
+
+jobs:
+  package:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [arm64, amd64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: bash scripts/package-macos.sh "${{ inputs.version || github.event.release.tag_name }}" "${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HomeReel-macos-${{ matrix.arch }}
