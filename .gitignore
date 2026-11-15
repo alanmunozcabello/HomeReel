@@ -1,0 +1,9 @@
+# Estado generado localmente por HomeReel
+data/*
+!data/.gitkeep
+
+# Binarios generados localmente
+HomeReel.exe
+HomeReel.exe~
+homereel
+/dist/
