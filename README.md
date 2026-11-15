@@ -45,14 +45,14 @@ La demo sirve vídeo directamente, sin transcodificación ni dependencias de Int
 
 1. Clona el repositorio.
 2. Ejecuta `bash scripts/install-linux.sh`. El script instala Go y FFmpeg con `apt`, y compila el binario para la arquitectura local.
-3. Inicia con `MEDIA_DIR=/mnt/media ./homereel`.
+3. Inicia con `./homereel`.
 
 ### macOS
 
 1. Descarga `HomeReel-macos-arm64.pkg` para Apple Silicon o `HomeReel-macos-amd64.pkg` para Intel desde los artefactos de GitHub Actions.
 2. Abre el paquete y sigue el instalador de macOS.
 3. El paquete instala FFmpeg automaticamente si Homebrew ya esta disponible. Si no, instala Homebrew desde https://brew.sh y ejecuta `brew install ffmpeg`.
-4. Inicia con `MEDIA_DIR="/Users/tuusuario/Media" homereel`.
+4. Inicia con `homereel`. Por defecto utiliza `~/HomeReel/media`.
 
 El flujo de GitHub Actions `macOS package` genera ambos paquetes. Para distribuirlos sin advertencias de Gatekeeper, deben firmarse y notarizarse con una cuenta Apple Developer.
 

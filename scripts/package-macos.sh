@@ -27,8 +27,9 @@ cat > "$payload/usr/local/bin/homereel" <<'EOF'
 #!/bin/sh
 set -eu
 data_dir="${HOME}/Library/Application Support/HomeReel"
-mkdir -p "$data_dir"
-exec env DB_PATH="$data_dir/streamer.db" /usr/local/lib/homereel/HomeReel "$@"
+mkdir -p "$data_dir" "$HOME/HomeReel/media"
+cd /usr/local/lib/homereel
+exec env MEDIA_DIR="$HOME/HomeReel/media" DB_PATH="$data_dir/streamer.db" /usr/local/lib/homereel/HomeReel "$@"
 EOF
 chmod 755 "$payload/usr/local/bin/homereel" "$payload/usr/local/lib/homereel/HomeReel"
 

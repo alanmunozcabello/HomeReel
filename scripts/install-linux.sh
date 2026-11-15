@@ -11,7 +11,7 @@ else
 fi
 
 cd "$root"
-mkdir -p data
+mkdir -p data media
 CGO_ENABLED=0 go build -ldflags="-s -w" -o homereel ./cmd/server
 chmod +x homereel
-echo "Listo. Ejecuta: MEDIA_DIR=/mnt/media ./homereel"
+echo "Listo. Ejecuta: ./homereel (usara $root/media por defecto)"

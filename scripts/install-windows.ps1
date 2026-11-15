@@ -1,10 +1,12 @@
 [CmdletBinding()]
 param(
-    [string]$MediaDir = "D:\media",
+    [string]$MediaDir = "",
     [int]$Port = 8080
 )
 
 $ErrorActionPreference = "Stop"
+$root = Split-Path -Parent $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($MediaDir)) { $MediaDir = Join-Path $root "media" }
 
 function Test-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
