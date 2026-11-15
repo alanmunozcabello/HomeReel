@@ -1,93 +1,194 @@
-## Requisitos Funcionales (RF)
+# HomeReel
 
-Las acciones y comportamientos específicos que el sistema debe ejecutar para el usuario final y los procesos internos.
+**HomeReel es un servidor multimedia personal para reproducir una biblioteca de vídeos en una red local, pensado para hogares que quieren acceder a sus películas y series desde el navegador, una Smart TV o una Raspberry Pi.**
 
-1. **RF01 - Escaneo de Directorios:** El sistema debe recorrer directorios específicos definidos en busca de archivos de video válidos (`.mp4`, `.mkv`).
-2. **RF02 - Extracción de Metadatos Técnicos:** El sistema debe extraer la duración exacta y el códec de video de cada archivo detectado utilizando `ffprobe`.
-3. **RF03 - Escaneo Diferencial:** El sistema debe identificar si un archivo es nuevo, si fue modificado (tamaño/fecha) o si fue desconectado, actualizando el catálogo sin reprocesar archivos inalterados.
-4. **RF04 - Streaming Personal (VOD):** El sistema debe servir archivos de video directamente al cliente permitiendo saltos de tiempo (*seek* / avance / retroceso) mediante peticiones HTTP parciales.
-5. **RF05 - Motor de Canal de TV (Live Sync):** El sistema debe calcular en tiempo real un ciclo infinito de reproducción y sincronizar a los clientes en el mismo segundo de emisión, independientemente de cuándo se conecten.
-6. **RF06 - API RESTful:** El sistema debe exponer endpoints HTTP para iniciar escaneos manuales, consultar el catálogo y obtener el estado del stream en vivo.
-7. **RF07 - Interfaz de Reproducción (Web UI):** El sistema debe proveer un cliente web en HTML/JS capaz de consumir la API, reproducir el video e integrarse con el motor del Canal de TV de forma autónoma.
-8. **RF08 - Resiliencia de Discos Extraíbles:** El sistema debe marcar los videos como "no disponibles" (`is_available = false`) en lugar de eliminarlos si el disco duro o pendrive de origen se desconecta.
+## Tabla de contenidos
 
-## Requisitos No Funcionales (RNF)
+- [Demo local y en LAN](#demo-local-y-en-lan)
+- [Problema que resuelve](#problema-que-resuelve)
+- [Características](#características)
+- [Stack tecnológico](#stack-tecnológico)
+- [Inicio rápido](#inicio-rápido)
+- [Configuración](#configuración)
+- [Uso](#uso)
+- [Decisiones técnicas](#decisiones-técnicas)
+- [Organización de la biblioteca](#organización-de-la-biblioteca)
+- [Administración y arranque automático](#administración-y-arranque-automático)
+- [Roadmap y limitaciones](#roadmap-y-limitaciones)
+- [Licencia](#licencia)
+- [Contacto](#contacto)
 
-Las restricciones de diseño, rendimiento y arquitectura obligatorias para que el sistema opere en el hardware objetivo.
+## Demo local y en LAN
 
-1. **RNF01 - Restricción de Hardware (Raspberry Pi 3):** El consumo de CPU debe mantenerse al mínimo mediante el uso de concurrencia controlada (*Worker Pools*), y el uso de memoria RAM no debe superar los 500 MB durante escaneos intensivos.
-2. **RNF02 - Cero Transcodificación (Direct Play):** El servidor tiene estrictamente prohibido re-codificar video al vuelo. La carga de decodificación debe delegarse íntegramente al dispositivo cliente (navegador/Smart TV).
-3. **RNF03 - Concurrencia de Base de Datos:** La lectura (streaming) y la escritura (escáner) de datos deben ocurrir simultáneamente sin generar errores de tipo `database is locked`. Se exige el uso de SQLite en modo WAL (*Write-Ahead Logging*).
-4. **RNF04 - Portabilidad CGO-Free:** El backend debe estar escrito enteramente en Go puro (usando `modernc.org/sqlite`), evitando dependencias en C para asegurar la compilación cruzada a ARM sin fricción.
-5. **RNF05 - Despliegue Simple:** El sistema debe poder instalarse como ejecutable nativo, con scripts que preparen FFmpeg y las dependencias de compilación.
+HomeReel se ejecuta en el puerto `8080` y escucha en todas las interfaces de red (`0.0.0.0`).
 
-## Módulos del Sistema y Mapeo de Requisitos
+- En el equipo que ejecuta el servidor: [http://localhost:8080](http://localhost:8080).
+- Desde otro dispositivo de la misma red: `http://IP_DEL_HOST:8080` (por ejemplo, `http://192.168.1.20:8080`).
 
-| Módulo | Responsabilidad Principal | Requisitos Satisfechos |
-| --- | --- | --- |
-| **1. Motor de Persistencia (`internal/repository`)** | Gestiona la conexión a la base de datos SQLite y ejecuta operaciones CRUD con control de concurrencia y contexto. | RF03, RF08, RNF03, RNF04 |
-| **2. Scanner & Metadata Engine (`internal/scanner`)** | Recorre directorios (O(1) para archivos conocidos) y administra un Worker Pool de `ffprobe` para no asfixiar el procesador. | RF01, RF02, RF03, RNF01 |
-| **3. Streaming Engine (`internal/streaming`)** | Despacha bytes nativamente vía `http.ServeContent` para VOD y calcula algorítmicamente la posición actual del loop en vivo para TV. | RF04, RF05, RNF01, RNF02 |
-| **4. API & Handlers (`internal/handler`)** | Expone y multiplexa las rutas HTTP, uniendo el motor de streaming, el repositorio y el escáner con el exterior. | RF06 |
-| **5. Cliente Frontend (`web/`)** | Consume los metadatos de la API, carga la interfaz nativa del reproductor (Video.js) y maneja la re-sincronización. | RF07, RNF02 |
+> La aplicación está diseñada para redes locales de confianza; no debe exponerse directamente a Internet.
 
-## Uso en LAN
+| Biblioteca multimedia | Consola de administración |
+| --- | --- |
+| ![Biblioteca de HomeReel con películas y episodios organizados](docs/imagens/home.png) | ![Consola local de HomeReel sobre la vista del canal en vivo](docs/imagens/console.png) |
+| Reproducción de película | Vista de administrador del canal en vivo |
+| ![Reproducción común de contenido](docs/imagens/normalplay.png) | ![Canal en vivo con controles de administrador abiertos](docs/imagens/liveplay.png) |
 
-La demo sirve vídeo directamente, sin transcodificación ni dependencias de Internet. Para una reproducción compatible con navegadores, Smart TV y Raspberry Pi, se recomienda MP4 con H.264/AAC.
+## Problema que resuelve
+
+Organizar y reproducir una colección personal de vídeos suele requerir configurar varios servicios o depender de plataformas externas. HomeReel escanea una carpeta de medios, crea un catálogo navegable y sirve los archivos directamente a cualquier navegador de la LAN.
+
+Está orientado a hogares, especialmente a instalaciones ligeras como una Raspberry Pi 3, que buscan una alternativa sencilla para vídeo bajo demanda y un canal compartido en vivo sin transcodificación.
+
+## Características
+
+- Catálogo de películas, series, temporadas y episodios a partir de la estructura de carpetas.
+- Reproducción bajo demanda con soporte HTTP Range para avanzar y retroceder.
+- Canal de TV en vivo sincronizado: todos los clientes ven el mismo punto del ciclo de reproducción.
+- Escaneo incremental: solo procesa con `ffprobe` los archivos nuevos o modificados.
+- Persistencia con SQLite y estado de vídeos desconectados, útil para discos extraíbles.
+- Panel web para actualizar la biblioteca y controlar el canal compartido.
+- Consola local para administrar la reproducción desde el terminal.
+
+## Stack tecnológico
+
+| Tecnología | Uso |
+| --- | --- |
+| [Go](https://go.dev/) 1.26+ | Backend, API HTTP, escáner y servidor de archivos. |
+| SQLite con [`modernc.org/sqlite`](https://pkg.go.dev/modernc.org/sqlite) | Catálogo y estado persistente; funciona sin CGO. |
+| FFmpeg (`ffprobe`) | Lectura de duración y códec de los vídeos. |
+| HTML, CSS y JavaScript | Interfaz web y reproductor del cliente. |
+| HTTP Range | Streaming directo de vídeo y función de búsqueda temporal. |
+
+## Inicio rápido
+
+### Requisitos previos
+
+- [Go](https://go.dev/dl/) 1.26 o posterior, para compilar desde el código fuente.
+- [FFmpeg](https://ffmpeg.org/) disponible en el `PATH` (incluye `ffprobe`).
+- Una biblioteca de archivos `.mp4` o `.mkv`. Para mayor compatibilidad en navegadores y Smart TV, se recomienda MP4 con vídeo H.264 y audio AAC.
 
 ### Windows
 
-1. Clona o descarga el repositorio.
-2. Haz doble clic en **`Instalar HomeReel.cmd`**. Instala Go/FFmpeg si faltan, compila el proyecto y abre el puerto LAN.
-3. Haz doble clic en **`HomeReel.exe`**. La consola queda abierta mientras el servidor está activo.
+1. Clona el repositorio:
 
-### Raspberry Pi / Linux
+   ```powershell
+   git clone https://github.com/alanmunozcabello/HomeReel.git
+   cd HomeReel
+   ```
 
-1. Clona el repositorio.
-2. Ejecuta `bash scripts/install-linux.sh`. El script instala Go y FFmpeg con `apt`, y compila el binario para la arquitectura local.
-3. Inicia con `./homereel`.
+2. Ejecuta `Installer.cmd` con doble clic. El instalador verifica o instala Go y FFmpeg mediante `winget`, compila `HomeReel.exe` y crea una regla de firewall para el puerto 8080.
+3. Inicia `HomeReel.exe`.
+4. Abre [http://localhost:8080](http://localhost:8080) o usa la IP del equipo desde otro dispositivo de la LAN.
+
+### Linux y Raspberry Pi
+
+1. Clona el repositorio:
+
+   ```bash
+   git clone https://github.com/alanmunozcabello/HomeReel.git
+   cd HomeReel
+   ```
+
+2. Instala dependencias y compila:
+
+   ```bash
+   bash scripts/install-linux.sh
+   ```
+
+   El script usa `apt` para instalar Go y FFmpeg.
+
+3. Inicia el servidor:
+
+   ```bash
+   ./homereel
+   ```
+
+4. Abre [http://localhost:8080](http://localhost:8080) o `http://IP_DEL_HOST:8080` desde la misma red local.
 
 ### macOS
 
-1. Descarga `HomeReel-macos-arm64.pkg` para Apple Silicon o `HomeReel-macos-amd64.pkg` para Intel desde los archivos adjuntos del Release de GitHub.
-2. Abre el paquete y sigue el instalador de macOS.
-3. El paquete instala FFmpeg automaticamente si Homebrew ya esta disponible. Si no, instala Homebrew desde https://brew.sh y ejecuta `brew install ffmpeg`.
-4. Inicia con `homereel`. Por defecto utiliza `~/HomeReel/media`.
+1. Descarga el paquete correspondiente desde los archivos adjuntos del release: `HomeReel-macos-arm64.pkg` para Apple Silicon o `HomeReel-macos-amd64.pkg` para Intel.
+2. Abre el paquete y sigue el instalador.
+3. Instala FFmpeg si es necesario:
 
-El flujo de GitHub Actions `macOS package` genera ambos paquetes. Para distribuirlos sin advertencias de Gatekeeper, deben firmarse y notarizarse con una cuenta Apple Developer.
+   ```bash
+   brew install ffmpeg
+   ```
 
-En los tres casos abre `http://localhost:8080`.
+4. Inicia el servidor:
 
-4. La primera carga escanea automáticamente. El botón **Actualizar** vuelve a indexar sólo los archivos cambiados. También puede invocarse `POST /api/v1/library/scan`.
-5. Desde otro equipo de la misma LAN usa `http://IP-DEL-SERVIDOR:8080`.
+   ```bash
+   homereel
+   ```
 
-Variables opcionales:
+Por defecto, macOS utiliza `~/HomeReel/media` como biblioteca. Los paquetes se generan con el flujo de GitHub Actions **macOS package**. Para evitar avisos de Gatekeeper al distribuirlos, es necesario firmarlos y notarizarlos con una cuenta de Apple Developer.
 
-- `MEDIA_DIR`: directorio absoluto o relativo de la biblioteca (por defecto `./media`).
-- `DB_PATH`: ubicación de SQLite (por defecto `./data/streamer.db`).
-- `PORT`: puerto HTTP (por defecto `8080`).
+### Compilación manual
 
-El despliegue principal no usa Docker. Go mantiene las dependencias de compilación en `go.mod`; la única dependencia del sistema es FFmpeg (`ffprobe`), que el instalador de Windows verifica o instala con winget.
+Si ya tienes Go y FFmpeg instalados, el flujo mínimo es:
 
-La pestaña **Biblioteca** reproduce contenido bajo demanda. `GET /api/v1/library` entrega el catálogo y `GET /api/v1/stream/{id}` acepta solicitudes HTTP Range, por lo que el reproductor puede avanzar y retroceder sin cargar el archivo completo.
+```bash
+git clone https://github.com/alanmunozcabello/HomeReel.git
+cd HomeReel
+go build -o homereel ./cmd/server
+./homereel
+```
 
-La pestaña **TV en vivo** reproduce el ciclo completo del catálogo. Cada cliente obtiene el vídeo y segundo actual desde `GET /api/v1/tv/live`; se sincroniza al entrar, al acabar un vídeo y cada 30 segundos. No se genera ni transcodifica un stream adicional.
+En Windows, el ejecutable puede llamarse `HomeReel.exe`:
 
-## Organización de biblioteca y control local
+```powershell
+go build -o HomeReel.exe .\cmd\server
+.\HomeReel.exe
+```
 
-La interfaz agrupa automáticamente las rutas bajo `MEDIA_DIR`:
+## Configuración
 
-- `series/<serie>/<temporada>/<capitulo>.mp4`: serie, temporadas y capítulos.
-- `series/<serie>/<capitulo>.mp4`: una única temporada ("Temporada 1").
-- `peliculas/<pelicula>/<archivo>.mp4` o `peliculas/<archivo>.mp4`: películas y vídeos sueltos.
+No se requiere archivo `.env`. Estas variables de entorno son opcionales:
 
-El botón **Admin** abre controles locales del canal compartido: seleccionar un vídeo, pausar, reanudar, buscar 30 segundos y volver a la programación automática. No hay autenticación ni sesiones: el estado pertenece al proceso del servidor y se aplica a todos los clientes. Sólo debe exponerse en una LAN de confianza.
+| Variable | Predeterminado | Descripción |
+| --- | --- | --- |
+| `MEDIA_DIR` | `./media` | Ruta absoluta o relativa de la biblioteca de vídeos. |
+| `DB_PATH` | `./data/streamer.db` | Ubicación del archivo SQLite. |
+| `PORT` | `8080` | Puerto HTTP del servidor. |
 
-Desde ese mismo panel el administrador puede cambiar la carpeta raíz de medios. En Windows, **Elegir carpeta** abre el selector nativo en el equipo que ejecuta el servidor; la selección se guarda en `data/settings.json` y se escanea inmediatamente. En Raspberry Pi/Linux se puede escribir la ruta montada, por ejemplo `/mnt/media`, y pulsar **Usar ruta**.
+Ejemplo en Linux:
 
-## Consola de administrador
+```bash
+MEDIA_DIR=/mnt/media PORT=8080 ./homereel
+```
 
-Al ejecutar el servidor en una terminal, ésta acepta comandos locales que controlan el mismo canal compartido que la web:
+## Uso
+
+La primera carga realiza un escaneo automático. Usa **Actualizar** para indexar los cambios; también puedes iniciar un escaneo con `POST /api/v1/library/scan`.
+
+- **Biblioteca:** reproduce vídeos bajo demanda. `GET /api/v1/library` expone el catálogo y `GET /api/v1/stream/{id}` sirve el archivo con soporte Range.
+- **TV en vivo:** `GET /api/v1/tv/live` calcula el vídeo y segundo actual del ciclo. Los clientes se sincronizan al entrar, al terminar un vídeo y cada 30 segundos.
+- **Admin:** permite seleccionar un vídeo, pausar, reproducir, avanzar 30 segundos o volver a la programación automática. No hay autenticación ni sesiones: las acciones afectan a todos los clientes conectados.
+
+## Decisiones técnicas
+
+- **Sin transcodificación:** HomeReel sirve el archivo original para mantener bajo el uso de CPU y memoria; es una decisión especialmente importante en Raspberry Pi 3. Por ello, la compatibilidad de reproducción depende del códec que soporte el dispositivo cliente.
+- **SQLite en modo WAL:** permite que el escaneo escriba en el catálogo mientras las solicitudes de streaming lo consultan, reduciendo conflictos de bloqueo.
+- **Go sin CGO:** `modernc.org/sqlite` permite compilar para ARM sin requerir bibliotecas C en el entorno de destino.
+- **Escaneo diferencial y pool limitado:** los archivos sin cambios no se vuelven a analizar, y `ffprobe` se limita a dos procesos concurrentes para no saturar equipos modestos.
+
+## Organización de la biblioteca
+
+HomeReel infiere el tipo de contenido según la ruta bajo `MEDIA_DIR`:
+
+```text
+media/
+├── series/<serie>/<temporada>/<capitulo>.mp4
+├── series/<serie>/<capitulo>.mp4
+├── peliculas/<pelicula>/<archivo>.mp4
+└── peliculas/<archivo>.mp4
+```
+
+Una serie sin carpeta de temporada se muestra como **Temporada 1**. Los vídeos que dejan de estar disponibles —por ejemplo, al desconectar un disco— se conservan en el catálogo como no disponibles en lugar de eliminarse.
+
+## Administración y arranque automático
+
+Desde la consola donde se ejecuta el servidor puedes usar:
 
 ```text
 help
@@ -101,14 +202,11 @@ media /mnt/media
 scan
 ```
 
-`media <ruta>` cambia y guarda la carpeta raíz, y después inicia un escaneo. Para administrar una Raspberry Pi mediante SSH, inicia el proceso en esa sesión o usa los mismos endpoints HTTP locales que consume la interfaz.
+`media <ruta>` guarda la carpeta raíz en `data/settings.json` e inicia un escaneo. En Windows, el panel **Admin** incluye un selector nativo de carpetas; en Linux/Raspberry Pi se puede escribir la ruta montada, como `/mnt/media`.
 
-## Arranque opcional en Raspberry Pi/Linux
-
-Si prefieres que el servidor arranque junto al sistema, crea un servicio `systemd`. Ajusta `User`, `WorkingDirectory`, `ExecStart` y `MEDIA_DIR` a tu instalación:
+Para iniciar automáticamente HomeReel en Linux/Raspberry Pi, crea `/etc/systemd/system/homereel.service` y ajusta las rutas a tu instalación:
 
 ```ini
-# /etc/systemd/system/homereel.service
 [Unit]
 Description=HomeReel
 After=network.target
@@ -127,13 +225,27 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-Después de guardar el archivo, activa el arranque automático con:
+Después, habilítalo con:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now homereel
+sudo systemctl status homereel
 ```
 
-Consulta el estado con `sudo systemctl status homereel`. Un servicio no tiene una consola interactiva; usa la interfaz web o las rutas HTTP de administración desde SSH para controlarlo.
+Un servicio de `systemd` no tiene consola interactiva; usa la interfaz web o los endpoints de administración desde SSH.
 
-El escaneo conserva los vídeos ausentes como no disponibles y evita invocar `ffprobe` si tamaño y fecha de modificación no cambiaron. Para archivos nuevos o modificados utiliza como máximo dos procesos `ffprobe`, adecuado para no saturar una Raspberry Pi 3.
+## Roadmap y limitaciones
+
+- [ ] Añadir autenticación y control de acceso antes de considerar un uso fuera de una LAN de confianza.
+- [ ] Firmar y notarizar los paquetes de macOS para una instalación sin advertencias de Gatekeeper.
+- [ ] Ampliar la compatibilidad de formatos manteniendo el objetivo de no transcodificar.
+
+## Licencia
+
+Este proyecto se distribuye bajo la [licencia MIT](LICENSE).
+
+## Contacto
+
+- GitHub: [@alanmunozcabello](https://github.com/alanmunozcabello)
+- Portafolio: [alanmunozcabello.github.io/Portfolio](https://alanmunozcabello.github.io/Portfolio/)
