@@ -49,7 +49,7 @@ La demo sirve vídeo directamente, sin transcodificación ni dependencias de Int
 
 ### macOS
 
-1. Descarga `HomeReel-macos-arm64.pkg` para Apple Silicon o `HomeReel-macos-amd64.pkg` para Intel desde los artefactos de GitHub Actions.
+1. Descarga `HomeReel-macos-arm64.pkg` para Apple Silicon o `HomeReel-macos-amd64.pkg` para Intel desde los archivos adjuntos del Release de GitHub.
 2. Abre el paquete y sigue el instalador de macOS.
 3. El paquete instala FFmpeg automaticamente si Homebrew ya esta disponible. Si no, instala Homebrew desde https://brew.sh y ejecuta `brew install ffmpeg`.
 4. Inicia con `homereel`. Por defecto utiliza `~/HomeReel/media`.
